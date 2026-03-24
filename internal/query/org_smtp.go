@@ -158,6 +158,33 @@ func (q *Queries) OrgSMTPConfigActive(ctx context.Context, orgID string) (config
 	return config, nil
 }
 
+func (q *Queries) OrgSMTPConfigByID(ctx context.Context, orgID, id string) (config *SMTPConfig, err error) {
+	ctx, span := tracing.NewSpan(ctx)
+	defer func() { span.EndWithError(err) }()
+
+	stmt, scan := prepareOrgSMTPConfigQuery()
+	query, args, err := stmt.Where(sq.Eq{
+		OrgSMTPConfigColumnInstanceID.identifier():    authz.GetInstance(ctx).InstanceID(),
+		OrgSMTPConfigColumnResourceOwner.identifier(): orgID,
+		OrgSMTPConfigColumnID.identifier():            id,
+	}).ToSql()
+	if err != nil {
+		return nil, zerrors.ThrowInternal(err, "QUERY-org8f9", "Errors.Query.SQLStatement")
+	}
+
+	err = q.client.QueryRowContext(ctx, func(row *sql.Row) error {
+		config, err = scan(row)
+		return err
+	}, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	if err := config.decryptSigningKey(q.smtpEncryptionAlgorithm); err != nil {
+		return nil, err
+	}
+	return config, nil
+}
+
 func (q *Queries) SearchOrgSMTPConfigs(ctx context.Context, orgID string, queries *SMTPConfigsSearchQueries) (configs *SMTPConfigs, err error) {
 	ctx, span := tracing.NewSpan(ctx)
 	defer func() { span.EndWithError(err) }()
